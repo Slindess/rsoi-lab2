@@ -1,0 +1,17 @@
+using GatewayService.Contracts;
+using GatewayService.Domain;
+namespace GatewayService.Application;
+public interface IBookingClients
+{
+    Task<HotelPage> GetHotelsAsync(int page, int size, CancellationToken ct); Task<Hotel?> GetHotelAsync(Guid uid, CancellationToken ct); Task<Loyalty> GetLoyaltyAsync(string user, CancellationToken ct); Task<Loyalty> ChangeLoyaltyAsync(string user, bool increment, CancellationToken ct); Task<Payment> CreatePaymentAsync(int price, CancellationToken ct); Task<Payment?> GetPaymentAsync(Guid uid, CancellationToken ct); Task CancelPaymentAsync(Guid uid, CancellationToken ct); Task<IReadOnlyList<Reservation>> GetReservationsAsync(string user, CancellationToken ct); Task<Reservation?> GetReservationAsync(Guid uid, CancellationToken ct); Task<Reservation> CreateReservationAsync(Guid uid, string user, Guid paymentUid, Guid hotelUid, DateOnly start, DateOnly end, CancellationToken ct); Task<bool> CancelReservationAsync(Guid uid, string user, CancellationToken ct);
+}
+public sealed class BookingApplication(IBookingClients clients)
+{
+    public Task<HotelPage> HotelsAsync(int p, int s, CancellationToken ct) => clients.GetHotelsAsync(p, s, ct); public Task<Loyalty> LoyaltyAsync(string u, CancellationToken ct) => clients.GetLoyaltyAsync(u, ct);
+    public async Task<CreateReservationResponse> CreateAsync(string user, CreateReservationRequest x, CancellationToken ct) { if (x.EndDate <= x.StartDate) throw new ArgumentException("endDate must be later than startDate"); var h = await clients.GetHotelAsync(x.HotelUid, ct) ?? throw new KeyNotFoundException("Hotel not found"); var l = await clients.GetLoyaltyAsync(user, ct); var nights = x.EndDate.DayNumber - x.StartDate.DayNumber; var price = h.Price * nights * (100 - l.Discount) / 100; var p = await clients.CreatePaymentAsync(price, ct); var uid = Guid.NewGuid(); try { await clients.CreateReservationAsync(uid, user, p.PaymentUid, h.HotelUid, x.StartDate, x.EndDate, ct); await clients.ChangeLoyaltyAsync(user, true, ct); } catch { await clients.CancelPaymentAsync(p.PaymentUid, ct); throw; } return new(uid, h.HotelUid, x.StartDate, x.EndDate, l.Discount, "PAID", new(p.Status, p.Price)); }
+    public async Task<IReadOnlyList<ReservationResponse>> AllAsync(string user, CancellationToken ct) { var a = await clients.GetReservationsAsync(user, ct); return (await Task.WhenAll(a.Select(x => MapAsync(x, ct)))).ToArray(); }
+    public async Task<ReservationResponse?> OneAsync(string user, Guid uid, CancellationToken ct) { var x = await clients.GetReservationAsync(uid, ct); return x is null || x.Username != user ? null : await MapAsync(x, ct); }
+    public async Task<bool> CancelAsync(string user, Guid uid, CancellationToken ct) { var x = await clients.GetReservationAsync(uid, ct); if (x is null || x.Username != user) return false; if (!await clients.CancelReservationAsync(uid, user, ct)) return false; await clients.CancelPaymentAsync(x.PaymentUid, ct); await clients.ChangeLoyaltyAsync(user, false, ct); return true; }
+    public async Task<UserInfoResponse> MeAsync(string u, CancellationToken ct) => new(await AllAsync(u, ct), await LoyaltyAsync(u, ct));
+    private async Task<ReservationResponse> MapAsync(Reservation x, CancellationToken ct) { var p = await clients.GetPaymentAsync(x.PaymentUid, ct) ?? new(x.PaymentUid, "CANCELED", 0); return new(x.ReservationUid, new(x.Hotel.HotelUid, x.Hotel.Name, $"{x.Hotel.Country}, {x.Hotel.City}, {x.Hotel.Address}", x.Hotel.Stars), x.StartDate, x.EndDate, x.Status, new(p.Status, p.Price)); }
+}

@@ -69,3 +69,21 @@
 1. [Hotels Booking System](v2/README.md)
 1. [Car Rental System](v3/README.md)
 1. [Library System](v4/README.md)
+
+## Реализация варианта 2 (.NET 9)
+
+Решение находится в каталоге `services` и состоит из четырех приложений:
+
+* `GatewayService` — единая публичная точка входа, порт 8080;
+* `LoyaltyService` — программа лояльности и БД `loyalties`, порт 8050;
+* `PaymentService` — платежи и БД `payments`, порт 8060;
+* `ReservationService` — отели, бронирования и БД `reservations`, порт 8070.
+
+В каждом сервисе код разделен на `Domain`, `Application`, `Infrastructure`, `Contracts` и `Api`.
+Интерфейсы хранилищ объявлены в прикладном слое, PostgreSQL-реализации находятся в инфраструктурном.
+Межсервисная оркестрация выполняется только через Gateway по HTTP.
+
+```shell
+docker compose up -d --build
+newman run -e v2/postman/environment.json v2/postman/collection.json
+```

@@ -17,7 +17,11 @@ jobs:
 
       - uses: docker/setup-buildx-action@v2
 
-      # TODO build and run unit tests
+      - name: Build and test
+        run: |
+          dotnet restore HotelsBooking.sln
+          dotnet build HotelsBooking.sln --configuration Release --no-restore
+          dotnet test HotelsBooking.sln --configuration Release --no-build
 
       - name: Build images
         timeout-minutes: 10
@@ -34,8 +38,7 @@ jobs:
       - name: Run API Tests
         uses: matt-ball/newman-action@master
         with:
-          # TODO insert your variant
-          collection: <variant>/postman/collection.json
+          collection: v2/postman/collection.json
           environment: <variant>/postman/environment.json
           delayRequest: 100
           reporters: '[ "cli" ]'
